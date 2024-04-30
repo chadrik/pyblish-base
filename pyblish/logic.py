@@ -4,9 +4,14 @@ import os
 import sys
 import logging
 import traceback
+from typing import Any, Callable, Iterable, Iterator as _Iterator, TypedDict
+from typing_extensions import Unpack
 
 from . import _registered_test, _registered_gui, lib
 from .plugin import (
+    Context,
+    Plugin,
+    Instance,
     Validator,
 
     # Matchin algorithms
@@ -26,13 +31,21 @@ _algorithms = {
 log = logging.getLogger("pyblish.logic")
 
 
+class IteratorState(TypedDict):
+    nextOrder: int | None
+    ordersWithError: set[int]
+
+
+TestFunction = Callable[[Unpack[IteratorState]], Any]
+
+
 class TestFailed(Exception):
     def __init__(self, msg, vars):
         super(TestFailed, self).__init__(msg)
         self.vars = vars
 
 
-def default_test(**vars):
+def default_test(**vars: Unpack[IteratorState]) -> str | None:
     r"""Evaluate whether or not to continue processing
 
     The test determines whether or not to proceed from one
@@ -58,15 +71,16 @@ def default_test(**vars):
     validation_order = Validator.order
 
     # If validation is done
-    if vars["nextOrder"] >= validation_order + offset:
+    if vars["nextOrder"] and vars["nextOrder"] >= validation_order + offset:
         for order in vars["ordersWithError"]:
             if lib.inrange(order,
                            base=validation_order,
                            offset=offset):
                 return "failed validation"
+    return None
 
 
-def register_test(test):
+def register_test(test: TestFunction) -> None:
     """Register test used to determine when to abort processing
 
     Arguments:
@@ -94,17 +108,17 @@ def register_test(test):
     _registered_test["default"] = test
 
 
-def registered_test():
+def registered_test() -> TestFunction:
     """Return the currently registered test"""
     return _registered_test["default"]
 
 
-def deregister_test():
+def deregister_test() -> None:
     """Restore default test"""
     register_test(default_test)
 
 
-def register_gui(package):
+def register_gui(package: str) -> None:
     """Register a default GUI for Pyblish
 
     The argument `package` must refer to an available Python
@@ -144,14 +158,14 @@ def registered_guis():
     return _registered_gui[:] + from_environment
 
 
-def deregister_gui(package):
+def deregister_gui(package: str) -> None:
     try:
         _registered_gui.remove(package)
     except ValueError:
         raise ValueError("\"%s\" has not been registered." % package)
 
 
-def plugins_by_families(plugins, families):
+def plugins_by_families(plugins: Iterable[type[Plugin]], families: list[str]) -> list[type[Plugin]]:
     """Same as :func:`plugins_by_family` except it takes multiple families
 
     Arguments:
@@ -182,7 +196,7 @@ def plugins_by_families(plugins, families):
     return compatible
 
 
-def plugins_by_family(plugins, family):
+def plugins_by_family(plugins: Iterable[type[Plugin]], family: str) -> list[type[Plugin]]:
     """Convenience function to :func:`plugins_by_families`
 
     Arguments:
@@ -197,7 +211,7 @@ def plugins_by_family(plugins, family):
     return plugins_by_families(plugins, [family])
 
 
-def plugins_by_instance(plugins, instance):
+def plugins_by_instance(plugins: Iterable[type[Plugin]], instance: Instance) -> list[type[Plugin]]:
     """Conveinence function for :func:`plugins_by_family`
 
     Arguments:
@@ -216,7 +230,7 @@ def plugins_by_instance(plugins, instance):
         plugins, ([family] if family else []) + families)
 
 
-def plugins_by_host(plugins, host):
+def plugins_by_host(plugins: Iterable[type[Plugin]], host: str) -> list[type[Plugin]]:
     """Return compatible plugins `plugins` to host `host`
 
     Arguments:
@@ -238,7 +252,7 @@ def plugins_by_host(plugins, host):
     return compatible
 
 
-def plugins_by_targets(plugins, targets):
+def plugins_by_targets(plugins: Iterable[type[Plugin]], targets) -> list[type[Plugin]]:
     """Reutrn compatible plugins `plugins` to targets `targets`
 
     Arguments:
@@ -265,7 +279,7 @@ def plugins_by_targets(plugins, targets):
     return compatible
 
 
-def instances_by_plugin(instances, plugin):
+def instances_by_plugin(instances: Iterable[Instance], plugin: type[Plugin]) -> list[Instance]:
     """Return compatible instances `instances` to plugin `plugin`
 
     Return instances as they correspond to a plug-in, given
@@ -309,7 +323,7 @@ def instances_by_plugin(instances, plugin):
     return compatible
 
 
-def _extract_traceback(exception):
+def _extract_traceback(exception: Exception) -> None:
     """Append traceback to `exception`
 
     This function safely extracts a traceback while being
@@ -334,7 +348,10 @@ def _extract_traceback(exception):
         del(exc_type, exc_value, exc_traceback)
 
 
-def Iterator(plugins, context, state=None, targets=None):
+def Iterator(plugins: Iterable[type[Plugin]],
+             context: Context,
+             state: IteratorState | None = None,
+             targets=None) -> _Iterator[tuple[type[Plugin], Instance | None]]:
     """Primary iterator
 
     This is the brains of publishing. It handles logic related

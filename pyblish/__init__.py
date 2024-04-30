@@ -6,17 +6,18 @@ Attributes:
 
 """
 
+import typing
+
 from .version import version, version_info, __version__
 
-
-_registered_paths = list()
-_registered_callbacks = dict()
+_registered_paths: list[str] = list()
+_registered_callbacks: dict[str, list[typing.Callable]] = dict()
 _registered_plugins = dict()
-_registered_services = dict()
+_registered_services: dict[str, typing.Any] = dict()
 _registered_test = dict()
-_registered_hosts = list()
-_registered_targets = list()
-_registered_gui = list()
+_registered_hosts: list[str] = list()
+_registered_targets: list[str] = list()
+_registered_gui: list[str] = list()
 _registered_plugin_filters = list()
 
 

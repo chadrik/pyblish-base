@@ -9,6 +9,7 @@ In this system, the predicate is whether or not a fname starts
 with "validate" and ends with ".py"
 
 """
+from __future__ import annotations
 
 # Standard library
 import os
@@ -20,6 +21,8 @@ import inspect
 import warnings
 import contextlib
 import uuid
+
+from typing import Any, Callable, TypedDict, TypeVar, TYPE_CHECKING
 
 # Local library
 from . import (
@@ -61,6 +64,19 @@ STRICT_DATATYPES = bool(os.getenv("PYBLISH_STRICT_DATATYPES"))
 EARLY_ADOPTER = bool(os.getenv("PYBLISH_EARLY_ADOPTER"))
 ALLOW_DUPLICATE_PLUGINS = EARLY_ADOPTER or ALLOW_DUPLICATES
 STRICT_DATATYPES = EARLY_ADOPTER or STRICT_DATATYPES
+
+T = TypeVar("T")
+
+
+class ProcessResult(TypedDict):
+    success: bool
+    plugin: type[Plugin]
+    instance: Instance | None
+    action: str | None
+    error: Exception | None
+    records: list[logging.LogRecord]
+    duration: float | None
+    progress: float
 
 
 class Provider():
@@ -121,7 +137,7 @@ class Provider():
         self._services[name] = obj
 
 
-def evaluate_pre11(plugin):
+def evaluate_pre11(plugin: type[Plugin]):
     """Determine whether the plug-in is pre-1.1"""
     plugin.__pre11__ = False
 
@@ -147,7 +163,7 @@ def evaluate_pre11(plugin):
         del(plugin.repair_instance)
 
 
-def evaluate_enabledness(plugin):
+def evaluate_enabledness(plugin: type[Plugin]):
     """Deterimine whether the plug-in supports Context/Instance"""
     plugin.__contextEnabled__ = False
     plugin.__instanceEnabled__ = False
@@ -165,7 +181,7 @@ def evaluate_enabledness(plugin):
         plugin.__instanceEnabled__ = True
 
 
-def append_logger(plugin):
+def append_logger(plugin: type[Plugin]):
     """Append logger to plugin
 
     The logger will include a plug-in's final name, as defined
@@ -241,17 +257,17 @@ class Plugin():
 
     """
 
-    hosts = ["*"]
-    families = ["*"]
-    targets = ["default"]
-    label = None
-    active = True
-    version = (0, 0, 0)
-    order = -1
-    optional = False
-    requires = "pyblish>=1"
-    actions = []
-    id = None  # Defined by metaclass
+    hosts: list[str] = ["*"]
+    families: list[str] = ["*"]
+    targets: list[str] = ["default"]
+    label: str | None = None
+    active: bool = True
+    version: tuple[int, ...] = (0, 0, 0)
+    order: int = -1
+    optional: bool = False
+    requires: str = "pyblish>=1"
+    actions: list[type[Action]] = []
+    id: str | None = None  # Defined by metaclass
     match = Intersection  # Default matching algorithm
 
     def __str__(self):
@@ -260,7 +276,7 @@ class Plugin():
     def __repr__(self):
         return u"%s.%s(%r)" % (__name__, type(self).__name__, self.__str__())
 
-    def process(self):
+    def process(self, *args, **kwargs):
         """Primary processing method
 
         This method is called whenever your plug-in is invoked
@@ -335,7 +351,7 @@ class ExplicitMetaPlugin(MetaPlugin):
 @six.add_metaclass(ExplicitMetaPlugin)
 class ContextPlugin(Plugin):
 
-    def process(self, context):
+    def process(self, context: Context):
         """Primary processing method
 
         Arguments:
@@ -347,7 +363,7 @@ class ContextPlugin(Plugin):
 @six.add_metaclass(MetaPlugin)
 class InstancePlugin(Plugin):
 
-    def process(self, instance):
+    def process(self, instance: Instance):
         """Primary processing method
 
         Arguments:
@@ -411,10 +427,13 @@ class Action():
 
     __type__ = "action"
 
-    label = None
-    active = True
-    on = "all"
-    icon = None
+    label: str | None = None
+    active: bool = True
+    on: str = "all"
+    icon: str | None = None
+
+    if TYPE_CHECKING:
+        id: str
 
     def __str__(self):
         return self.label or type(self).__name__
@@ -436,7 +455,7 @@ def Category(label):
 
 
 @contextlib.contextmanager
-def logger(handler):
+def logger(handler: logging.Handler):
     """Listen in on the global logger
 
     Arguments:
@@ -458,7 +477,10 @@ def logger(handler):
         logger.setLevel(old_level)
 
 
-def process(plugin, context, instance=None, action=None):
+def process(plugin: type[Plugin],
+            context: Context,
+            instance: Instance | None = None,
+            action: str | None = None) -> ProcessResult:
     """Produce a single result from a Plug-in
 
     Arguments:
@@ -481,7 +503,10 @@ def process(plugin, context, instance=None, action=None):
     return result
 
 
-def __explicit_process(plugin, context, instance=None, action=None):
+def __explicit_process(plugin: type[Plugin],
+                       context: Context,
+                       instance: Instance | None = None,
+                       action: str | None = None) -> ProcessResult:
     """Produce result from explicit plug-in
 
     This is the primary internal mechanism for producing results
@@ -495,7 +520,7 @@ def __explicit_process(plugin, context, instance=None, action=None):
         raise AssertionError("Cannot process an InstancePlugin without an "
                              "instance. This is a bug")
 
-    result = {
+    result: ProcessResult = {
         "success": False,
         "plugin": plugin,
         "instance": instance,
@@ -507,17 +532,17 @@ def __explicit_process(plugin, context, instance=None, action=None):
     }
 
     if not action:
-        args = (context if issubclass(plugin, ContextPlugin) else instance,)
+        args: tuple[Any, ...] = (context if issubclass(plugin, ContextPlugin) else instance,)
         runner = plugin().process
     else:
         actions = dict((a.id, a) for a in plugin.actions)
         assert action in actions, ("%s did not have action: %s. This is a bug"
                                    % (plugin, action))
-        action = actions[action]
+        action_cls = actions[action]
         args = (context, plugin)
-        runner = action().process
+        runner = action_cls().process
 
-    records = list()
+    records: list[logging.LogRecord] = list()
     handler = lib.MessageHandler(records)
 
     __start = time.time()
@@ -551,7 +576,10 @@ def __explicit_process(plugin, context, instance=None, action=None):
     return result
 
 
-def __implicit_process(plugin, context, instance=None, action=None):
+def __implicit_process(plugin: type[Plugin],
+                       context: Context,
+                       instance: Instance | None = None,
+                       action: str | None = None) -> ProcessResult:
     """Produce result from implicit plug-in
 
     This is a fallback mechanism for backwards compatibility.
@@ -562,7 +590,7 @@ def __implicit_process(plugin, context, instance=None, action=None):
 
     """
 
-    result = {
+    result: ProcessResult = {
         "success": False,
         "plugin": plugin,
         "instance": instance,
@@ -579,10 +607,10 @@ def __implicit_process(plugin, context, instance=None, action=None):
         actions = dict((a.id, a) for a in plugin.actions)
         assert action in actions, ("%s did not have action: %s. This is a bug"
                                    % (plugin, action))
-        action = actions[action]
-        runner = action().process
+        action_cls = actions[action]
+        runner = action_cls().process
 
-    records = list()
+    records: list[logging.LogRecord] = list()
     handler = lib.MessageHandler(records)
 
     provider = Provider()
@@ -616,7 +644,7 @@ def __implicit_process(plugin, context, instance=None, action=None):
     context.data["results"].append(result)
 
     # Backwards compatibility
-    result["asset"] = instance  # Deprecated key
+    result["asset"] = instance  # type: ignore # Deprecated key
 
     return result
 
@@ -694,7 +722,7 @@ class _Dict(dict):
         dict.__setitem__(self, k, v)
 
 
-class AbstractEntity(list):
+class AbstractEntity(list[T]):
     """Superclass for Context and Instance
 
     Attributes:
@@ -705,7 +733,7 @@ class AbstractEntity(list):
 
     """
 
-    def __init__(self, name, parent=None):
+    def __init__(self, name: str, parent: AbstractEntity | None = None):
         assert isinstance(name, six.string_types)
         assert parent is None or isinstance(parent, AbstractEntity)
 
@@ -719,29 +747,30 @@ class AbstractEntity(list):
             parent.append(self)
 
     @property
-    def id(self):
+    def id(self) -> str:
         return self._id
 
     @property
-    def parent(self):
+    def parent(self) -> AbstractEntity | None:
         return self._parent
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._name
 
     @property
-    def data(self):
+    def data(self) -> _Dict:
         return self._data
 
 
-class Context(AbstractEntity):
+class Context(AbstractEntity["Instance"]):
     """Maintain a collection of Instances"""
 
-    def __init__(self, name="Context", parent=None):
+    # FIXME: is it valid for a Context to have a parent?
+    def __init__(self, name="Context", parent: AbstractEntity | None = None):
         super(Context, self).__init__(name, parent)
 
-    def __contains__(self, key):
+    def __contains__(self, key: object) -> bool:
         """Support both Instance objects and `id` strings
 
         Example:
@@ -757,13 +786,13 @@ class Context(AbstractEntity):
         """
 
         try:
-            key = key.id
+            key = key.id  # type: ignore
         except Exception:
             pass
 
         return key in [c.id for c in self]
 
-    def create_instance(self, name, **kwargs):
+    def create_instance(self, name: str, **kwargs) -> Instance:
         """Convenience method of the following.
 
         >>> ctx = Context()
@@ -778,7 +807,7 @@ class Context(AbstractEntity):
         instance = Instance(name, parent=self, **kwargs)
         return instance
 
-    def __getitem__(self, item):
+    def __getitem__(self, item) -> Instance:
         """Enable support for dict-like getting of children by id
 
         Example:
@@ -796,7 +825,7 @@ class Context(AbstractEntity):
         except StopIteration:
             raise KeyError("%s not in list" % item)
 
-    def get(self, key, default=None):
+    def get(self, key, default: Instance | None = None) -> Instance:
         """Enable support for dict-like getting of children by id
 
         Example
@@ -824,7 +853,7 @@ class Instance(AbstractEntity):
 
     """
 
-    def __init__(self, name, parent=None, **kwargs):
+    def __init__(self, name: str, parent: AbstractEntity, **kwargs):
         super(Instance, self).__init__(name, parent)
         self._data["family"] = "default"
         self._data["name"] = name
@@ -843,7 +872,7 @@ class Instance(AbstractEntity):
         return self._name
 
     @property
-    def context(self):
+    def context(self) -> Context:
         """Return top-level parent; the context"""
         parent = self.parent
         while parent.parent:
@@ -857,12 +886,17 @@ class Instance(AbstractEntity):
 
         return parent
 
+    @property
+    def parent(self) -> AbstractEntity:
+        assert self._parent is not None
+        return self._parent
+
 
 # Forwards-compatibility alias
 Asset = Instance
 
 
-def current_host():
+def current_host() -> str:
     """Return host last registered thru `register_host()`
 
     When running Pyblish from within a host, this function determines
@@ -884,7 +918,7 @@ def current_host():
     return _registered_hosts[-1] if _registered_hosts else "unknown"
 
 
-def register_callback(signal, callback):
+def register_callback(signal: str, callback: Callable) -> None:
     """Register a new callback
 
     Arguments:
@@ -905,7 +939,7 @@ def register_callback(signal, callback):
         _registered_callbacks[signal] = [callback]
 
 
-def deregister_callback(signal, callback):
+def deregister_callback(signal: str, callback: Callable) -> None:
     """Deregister a callback
 
     Arguments:
@@ -932,7 +966,7 @@ def registered_callbacks():
     return _registered_callbacks
 
 
-def register_plugin(plugin):
+def register_plugin(plugin: type[Plugin]):
     """Register a new plug-in
 
     Arguments:
@@ -975,7 +1009,7 @@ or register a new host using `pyblish.api.register_host("%s")`
     _registered_plugins[plugin.__name__] = plugin
 
 
-def deregister_plugin(plugin):
+def deregister_plugin(plugin: type[Plugin]):
     """De-register an existing plug-in
 
     Arguments:
@@ -992,7 +1026,7 @@ def deregister_all_plugins():
 
 
 @lib.deprecated
-def register_service(name, obj):
+def register_service(name: str, obj: Any):
     """Register a new service
 
     Arguments:
@@ -1005,7 +1039,7 @@ def register_service(name, obj):
 
 
 @lib.deprecated
-def deregister_service(name):
+def deregister_service(name: str):
     """De-register an existing service by name
 
     Arguments:
@@ -1099,7 +1133,7 @@ def registered_paths():
     return list(_registered_paths)
 
 
-def registered_plugins():
+def registered_plugins() -> list[type[Plugin]]:
     """Return plug-ins added via :func:`register_plugin`
 
     .. note:: This returns a copy of the registered plug-ins
@@ -1112,14 +1146,14 @@ def registered_plugins():
     for plugin in _registered_plugins.values():
         # Maintain immutability across retrievals
         copy = type(plugin.__name__, (plugin,), {})
-        copy._id = plugin._id
+        copy._id = plugin._id  # type: ignore
         copy.__doc__ = plugin.__doc__
         plugins.append(copy)
 
     return plugins
 
 
-def register_host(host):
+def register_host(host: str):
     """Register a new host
 
     Registered hosts are used to filter discovered
@@ -1136,7 +1170,7 @@ def register_host(host):
         _registered_hosts.append(host)
 
 
-def deregister_host(host, quiet=False):
+def deregister_host(host: str, quiet=False):
     """Remove an already registered host
 
     Arguments:
@@ -1154,20 +1188,20 @@ def deregister_host(host, quiet=False):
             raise e
 
 
-def deregister_all_hosts():
+def deregister_all_hosts() -> None:
     _registered_hosts[:] = []
 
 
-def registered_hosts():
+def registered_hosts() -> list[str]:
     """Return the currently registered hosts"""
     return list(_registered_hosts)
 
 
-def current_target():
+def current_target() -> str:
     return _registered_targets[-1] if _registered_targets else ""
 
 
-def register_target(target):
+def register_target(target: str) -> None:
     """Register a new target
 
     Registered targets can be used in plug-ins to determin outputs
@@ -1188,7 +1222,7 @@ def register_target(target):
     _registered_targets.append(target)
 
 
-def deregister_target(target, quiet=False):
+def deregister_target(target: str, quiet=False) -> None:
     """Remove an already registered target
 
     Arguments:
@@ -1206,11 +1240,11 @@ def deregister_target(target, quiet=False):
             raise e
 
 
-def deregister_all_targets():
+def deregister_all_targets() -> None:
     _registered_targets[:] = []
 
 
-def registered_targets():
+def registered_targets() -> list[str]:
     """Return the currently registered targets"""
     return list(_registered_targets)
 
@@ -1257,7 +1291,7 @@ def registered_discovery_filters():
     return _registered_plugin_filters
 
 
-def environment_paths():
+def environment_paths() -> list[str]:
     """Return paths added via environment variable"""
 
     plugin_path = os.environ.get("PYBLISHPLUGINPATH")
@@ -1270,7 +1304,7 @@ def environment_paths():
     return paths
 
 
-def plugin_paths():
+def plugin_paths() -> list[str]:
     """Collect paths from all sources.
 
     This function looks at the three potential sources of paths
@@ -1296,7 +1330,7 @@ def plugin_paths():
     return paths
 
 
-def discover(type=None, regex=None, paths=None):
+def discover(type=None, regex=None, paths=None) -> list[type[Plugin]]:
     """Find and return available plug-ins
 
     This function looks for files within paths registered via
@@ -1393,17 +1427,17 @@ def discover(type=None, regex=None, paths=None):
 
         plugins[plugin.__name__] = plugin
 
-    plugins = list(plugins.values())
-    sort(plugins)  # In-place
+    result = list(plugins.values())
+    sort(result)  # In-place
 
     # In-place user-defined filter
     for filter_ in _registered_plugin_filters:
-        filter_(plugins)
+        filter_(result)
 
-    return plugins
+    return result
 
 
-def plugins_from_module(module):
+def plugins_from_module(module: types.ModuleType) -> list[type[Plugin]]:
     """Return plug-ins from module
 
     Arguments:
@@ -1449,7 +1483,7 @@ def plugins_from_module(module):
     return plugins
 
 
-def plugin_is_valid(plugin):
+def plugin_is_valid(plugin: type[Plugin]) -> bool:
     """Determine whether or not plug-in `plugin` is valid
 
     Arguments:
@@ -1499,7 +1533,7 @@ def plugin_is_valid(plugin):
     return True
 
 
-def version_is_compatible(plugin):
+def version_is_compatible(plugin: type[Plugin]):
     """Lookup compatibility between plug-in and current version of Pyblish
 
     Arguments:
@@ -1513,7 +1547,7 @@ def version_is_compatible(plugin):
     return True
 
 
-def host_is_compatible(plugin):
+def host_is_compatible(plugin: type[Plugin]):
     """Determine whether plug-in `plugin` is compatible with the current host
 
     Available hosts are determined by :func:`registered_hosts`.
@@ -1529,7 +1563,7 @@ def host_is_compatible(plugin):
     return any(host in plugin.hosts for host in registered_hosts())
 
 
-def sort(plugins):
+def sort(plugins: list[type[Plugin]]) -> list[type[Plugin]]:
     """Sort `plugins` in-place
 
     Their order is determined by their `order` attribute,

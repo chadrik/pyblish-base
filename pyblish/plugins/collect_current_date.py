@@ -9,5 +9,5 @@ class CollectCurrentDate(pyblish.api.ContextPlugin):
     order = pyblish.api.CollectorOrder
     label = "Current date"
 
-    def process(self, context):
+    def process(self, context: pyblish.api.Context):
         context.data['date'] = pyblish.lib.time()
