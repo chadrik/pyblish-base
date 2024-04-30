@@ -9,5 +9,5 @@ class CollectCurrentUser(pyblish.api.ContextPlugin):
     order = pyblish.api.CollectorOrder
     label = "Current user"
 
-    def process(self, context):
+    def process(self, context: pyblish.api.Context):
         context.data['user'] = getpass.getuser()

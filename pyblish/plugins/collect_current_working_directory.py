@@ -9,5 +9,5 @@ class CollectCurrentWorkingDirectory(pyblish.api.ContextPlugin):
     order = pyblish.api.CollectorOrder
     label = "Current working directory"
 
-    def process(self, context):
+    def process(self, context: pyblish.api.Context):
         context.data['cwd'] = os.getcwd()

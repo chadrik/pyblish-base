@@ -5,9 +5,12 @@ import datetime
 import warnings
 import traceback
 import functools
+from typing import TypeVar
 
 from . import _registered_callbacks
 from .vendor import six
+
+TypeT = TypeVar("TypeT", bound=type)
 
 
 def inrange(number, base, offset=0.5):
@@ -43,12 +46,12 @@ def inrange(number, base, offset=0.5):
 
 
 class MessageHandler(logging.Handler):
-    def __init__(self, records, *args, **kwargs):
+    def __init__(self, records: list[logging.LogRecord], *args, **kwargs):
         # Not using super(), for compatibility with Python 2.6
         logging.Handler.__init__(self, *args, **kwargs)
         self.records = records
 
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord):
         if record.name.startswith("pyblish"):
             self.records.append(record)
 
@@ -144,7 +147,7 @@ class classproperty(object):
         return self.getter(owner)
 
 
-def log(cls):
+def log(cls: TypeT) -> TypeT:
     """Decorator for attaching a logger to the class `cls`
 
     Loggers inherit the syntax {module}.{submodule}
@@ -172,7 +175,7 @@ def log(cls):
     return cls
 
 
-def parse_environment_paths(paths):
+def parse_environment_paths(paths) -> list[str]:
     """Given a (semi-)colon separated string of paths, return a list
 
     Example:
@@ -199,7 +202,7 @@ def parse_environment_paths(paths):
     return paths_list
 
 
-def get_formatter():
+def get_formatter() -> logging.Formatter:
     """Return a default Pyblish formatter for logging
 
     Example:

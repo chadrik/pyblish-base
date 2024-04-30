@@ -5,6 +5,7 @@ from __future__ import absolute_import
 # Standard library
 import logging
 import warnings
+from typing import Iterable, Iterator
 
 # Local library
 from . import api, logic, plugin, lib
@@ -27,7 +28,9 @@ __all__ = [
 ]
 
 
-def publish(context=None, plugins=None, targets=None):
+def publish(context: plugin.Context | None = None,
+            plugins: Iterable[type[plugin.Plugin]] | None = None,
+            targets: list[str] | None = None) -> plugin.Context:
     """Publish everything
 
     This function will process all available plugins of the
@@ -59,7 +62,9 @@ def publish(context=None, plugins=None, targets=None):
     return context
 
 
-def publish_iter(context=None, plugins=None, targets=None):
+def publish_iter(context: plugin.Context | None = None,
+                 plugins: Iterable[type[plugin.Plugin]] | None = None,
+                 targets: list[str] | None = None) -> Iterator[plugin.ProcessResult]:
     """Publish iterator
 
     This function will process all available plugins of the
@@ -93,7 +98,10 @@ def publish_iter(context=None, plugins=None, targets=None):
     api.emit("published", context=context)
 
 
-def _convenience_iter(context=None, plugins=None, targets=None, order=None):
+def _convenience_iter(context: plugin.Context | None = None,
+                      plugins: Iterable[type[plugin.Plugin]] | None = None,
+                      targets: list[str] | None = None,
+                      order=None) -> Iterator[plugin.ProcessResult]:
     # Must check against None, as objects be emptys
     context = api.Context() if context is None else context
     plugins = api.discover() if plugins is None else plugins
@@ -142,7 +150,7 @@ def _convenience_iter(context=None, plugins=None, targets=None, order=None):
                 plugins.remove(Plugin)
 
     # Mutable state, used in Iterator
-    state = {
+    state: logic.IteratorState = {
         "nextOrder": None,
         "ordersWithError": set()
     }
@@ -183,7 +191,9 @@ def _convenience_iter(context=None, plugins=None, targets=None, order=None):
         yield result
 
 
-def collect(context=None, plugins=None, targets=None):
+def collect(context: plugin.Context | None = None,
+            plugins: Iterable[type[plugin.Plugin]] | None = None,
+            targets: list[str] | None = None) -> plugin.Context:
     """Convenience function for collection-only
 
      _________    . . . . .  .   . . . . . .   . . . . . . .
@@ -200,7 +210,9 @@ def collect(context=None, plugins=None, targets=None):
     return context
 
 
-def validate(context=None, plugins=None, targets=None):
+def validate(context: plugin.Context | None = None,
+             plugins: Iterable[type[plugin.Plugin]] | None = None,
+             targets: list[str] | None = None) -> plugin.Context:
     """Convenience function for validation-only
 
     . . . . . .    __________    . . . . . .   . . . . . . .
@@ -217,7 +229,9 @@ def validate(context=None, plugins=None, targets=None):
     return context
 
 
-def extract(context=None, plugins=None, targets=None):
+def extract(context: plugin.Context | None = None,
+            plugins: Iterable[type[plugin.Plugin]] | None = None,
+            targets: list[str] | None = None) -> plugin.Context:
     """Convenience function for extraction-only
 
     . . . . . .   . . . . .  .    _________    . . . . . . .
@@ -234,7 +248,9 @@ def extract(context=None, plugins=None, targets=None):
     return context
 
 
-def integrate(context=None, plugins=None, targets=None):
+def integrate(context: plugin.Context | None = None,
+              plugins: Iterable[type[plugin.Plugin]] | None = None,
+              targets: list[str] | None = None) -> plugin.Context:
     """Convenience function for integration-only
 
     . . . . . .   . . . . .  .   . . . . . .    ___________
@@ -251,7 +267,9 @@ def integrate(context=None, plugins=None, targets=None):
     return context
 
 
-def collect_iter(context=None, plugins=None, targets=None):
+def collect_iter(context: plugin.Context | None = None,
+                 plugins: Iterable[type[plugin.Plugin]] | None = None,
+                 targets: list[str] | None = None) -> Iterator[plugin.ProcessResult]:
     for result in _convenience_iter(context, plugins, targets,
                                     order=api.CollectorOrder):
         yield result
@@ -259,7 +277,9 @@ def collect_iter(context=None, plugins=None, targets=None):
     api.emit("collected", context=context)
 
 
-def validate_iter(context=None, plugins=None, targets=None):
+def validate_iter(context: plugin.Context | None = None,
+                  plugins: Iterable[type[plugin.Plugin]] | None = None,
+                  targets: list[str] | None = None) -> Iterator[plugin.ProcessResult]:
     for result in _convenience_iter(context, plugins, targets,
                                     order=api.ValidatorOrder):
         yield result
@@ -267,7 +287,9 @@ def validate_iter(context=None, plugins=None, targets=None):
     api.emit("validated", context=context)
 
 
-def extract_iter(context=None, plugins=None, targets=None):
+def extract_iter(context: plugin.Context | None = None,
+                 plugins: Iterable[type[plugin.Plugin]] | None = None,
+                 targets: list[str] | None = None) -> Iterator[plugin.ProcessResult]:
     for result in _convenience_iter(context, plugins, targets,
                                     order=api.ExtractorOrder):
         yield result
@@ -275,7 +297,9 @@ def extract_iter(context=None, plugins=None, targets=None):
     api.emit("extracted", context=context)
 
 
-def integrate_iter(context=None, plugins=None, targets=None):
+def integrate_iter(context: plugin.Context | None = None,
+                   plugins: Iterable[type[plugin.Plugin]] | None = None,
+                   targets: list[str] | None = None) -> Iterator[plugin.ProcessResult]:
     for result in _convenience_iter(context, plugins, targets,
                                     order=api.IntegratorOrder):
         yield result
@@ -283,7 +307,9 @@ def integrate_iter(context=None, plugins=None, targets=None):
     api.emit("integrated", context=context)
 
 
-def _convenience(context=None, plugins=None, targets=None, order=None):
+def _convenience(context: plugin.Context | None = None,
+                 plugins: Iterable[type[plugin.Plugin]] | None = None,
+                 targets: list[str] | None = None, order=None) -> plugin.Context:
     context = context if context is not None else api.Context()
 
     for result in _convenience_iter(context, plugins, targets, order):
@@ -298,13 +324,15 @@ conform = integrate
 run = publish  # Alias
 
 
-def publish_all(context=None, plugins=None):
+def publish_all(context: plugin.Context | None = None,
+                plugins: Iterable[type[plugin.Plugin]] | None = None):
     warnings.warn("pyblish.util.publish_all has been "
                   "deprecated; use publish()")
     return publish(context, plugins)
 
 
-def validate_all(context=None, plugins=None):
+def validate_all(context: plugin.Context | None = None,
+                 plugins: Iterable[type[plugin.Plugin]] | None = None):
     warnings.warn("pyblish.util.validate_all has been "
                   "deprecated; use collect() followed by validate()")
     context = collect(context, plugins)
